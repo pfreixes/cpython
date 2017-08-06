@@ -290,6 +290,8 @@ class ProactorSocketTransportTests(test_utils.TestCase):
         self.assertFalse(self.sock.shutdown.called)
         tr._loop._proactor.send.assert_called_with(self.sock, b'data')
         f.set_result(4)
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         self.loop._run_once()
         self.sock.shutdown.assert_called_with(socket.SHUT_WR)
         tr.close()
@@ -300,6 +302,8 @@ class ProactorSocketTransportTests(test_utils.TestCase):
         self.assertTrue(tr.can_write_eof())
         tr.write_eof()
         self.assertTrue(tr.is_closing())
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         self.loop._run_once()
         self.assertTrue(self.sock.close.called)
         tr.close()
@@ -314,6 +318,8 @@ class ProactorSocketTransportTests(test_utils.TestCase):
         self.assertFalse(self.sock.shutdown.called)
         tr._loop._proactor.send.assert_called_with(self.sock, b'data')
         f.set_result(4)
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         self.loop._run_once()
         self.loop._run_once()
         self.assertTrue(self.sock.close.called)
@@ -335,6 +341,8 @@ class ProactorSocketTransportTests(test_utils.TestCase):
             f.set_result(msg)
             futures.append(f)
         self.loop._proactor.recv.side_effect = futures
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         self.loop._run_once()
         self.assertFalse(tr._paused)
         self.loop._run_once()
@@ -370,6 +378,8 @@ class ProactorSocketTransportTests(test_utils.TestCase):
         # write a large chunk, must pause writing
         fut = asyncio.Future(loop=self.loop)
         self.loop._proactor.send.return_value = fut
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         tr.write(b'large data')
         self.loop._run_once()
         self.assertTrue(self.protocol.pause_writing.called)
@@ -386,6 +396,8 @@ class ProactorSocketTransportTests(test_utils.TestCase):
         # first short write, the buffer is not full (3 <= 4)
         fut1 = asyncio.Future(loop=self.loop)
         self.loop._proactor.send.return_value = fut1
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         tr.write(b'123')
         self.loop._run_once()
         self.assertEqual(tr.get_write_buffer_size(), 3)
@@ -403,6 +415,8 @@ class ProactorSocketTransportTests(test_utils.TestCase):
         # first short write, the buffer is not full (1 <= 4)
         fut = asyncio.Future(loop=self.loop)
         self.loop._proactor.send.return_value = fut
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         tr.write(b'1')
         self.loop._run_once()
         self.assertEqual(tr.get_write_buffer_size(), 1)
@@ -428,7 +442,11 @@ class ProactorSocketTransportTests(test_utils.TestCase):
         fut = asyncio.Future(loop=self.loop)
         fut.set_result(None)
         self.loop._proactor.send.return_value = fut
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         tr.write(b'very large data')
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         self.loop._run_once()
         self.assertEqual(tr.get_write_buffer_size(), 0)
         self.assertFalse(self.protocol.pause_writing.called)

@@ -53,6 +53,9 @@ _MIN_CANCELLED_TIMER_HANDLES_FRACTION = 0.5
 _FATAL_ERROR_IGNORE = (BrokenPipeError,
                        ConnectionResetError, ConnectionAbortedError)
 
+# Frequency of how often the load is updated.
+_LOAD_FREQ = 1
+
 
 def _format_handle(handle):
     cb = handle._callback
@@ -264,10 +267,22 @@ class BaseEventLoop(events.AbstractEventLoop):
         # Set to True when `loop.shutdown_asyncgens` is called.
         self._asyncgens_shutdown_called = False
 
+        self._load = 0.0
+        self._load_last_update = None
+        self._load_sleeping_time = None
+
     def __repr__(self):
         return ('<%s running=%s closed=%s debug=%s>'
                 % (self.__class__.__name__, self.is_running(),
                    self.is_closed(), self.get_debug()))
+
+    def load(self):
+        """Return the load of the loop. A float number 0.0 and 1.0."""
+        if (self.is_running()) and\
+                (self.time() - self._load_last_update >= _LOAD_FREQ):
+            self._update_load()
+
+        return self._load
 
     def create_future(self):
         """Create a Future object attached to the loop."""
@@ -414,6 +429,9 @@ class BaseEventLoop(events.AbstractEventLoop):
             old_agen_hooks = sys.get_asyncgen_hooks()
             sys.set_asyncgen_hooks(firstiter=self._asyncgen_firstiter_hook,
                                    finalizer=self._asyncgen_finalizer_hook)
+
+        self._load_sleeping_time = 0
+        self._load_last_update = self.time()
         try:
             events._set_running_loop(self)
             while True:
@@ -1361,10 +1379,22 @@ class BaseEventLoop(events.AbstractEventLoop):
             when = self._scheduled[0]._when
             timeout = max(0, when - self.time())
 
-        if self._debug and timeout != 0:
+        if timeout != 0:
             t0 = self.time()
             event_list = self._selector.select(timeout)
             dt = self.time() - t0
+
+            if timeout is not None:
+                # Count only time spent sleeping, if SO decided to give
+                # the CPU later dont count it as slept time.
+                self._load_sleeping_time += min(dt, timeout)
+            else:
+                self._load_sleeping_time += dt
+
+        else:
+            event_list = self._selector.select(timeout)
+
+        if self._debug and timeout != 0:
             if dt >= 1.0:
                 level = logging.INFO
             else:
@@ -1381,8 +1411,7 @@ class BaseEventLoop(events.AbstractEventLoop):
                 logger.log(level,
                            'poll %.3f ms took %.3f ms: timeout',
                            timeout * 1e3, dt * 1e3)
-        else:
-            event_list = self._selector.select(timeout)
+
         self._process_events(event_list)
 
         # Handle 'later' callbacks that are ready.
@@ -1419,7 +1448,39 @@ class BaseEventLoop(events.AbstractEventLoop):
                     self._current_handle = None
             else:
                 handle._run()
+
         handle = None  # Needed to break cycles when an exception occurs.
+
+        if self.time() - self._load_last_update >= _LOAD_FREQ:
+            self._update_load()
+
+    def _update_load(self):
+        """Update the load of the loop"""
+        # The load of the loop is calculated as the
+        # percentage of the time waiting for IO events
+        # vs the total time from the last update.
+
+        # Use a decay function to represent the load of the system.
+        # where each decay step is done at each _LOAD_FREQ
+        # ex. load = t0/2 + t1/4 + t2/8 + ...
+
+        # Decay as many times the _LOAD_FREQ has been reached,
+        # where in regular situations just one, however when the reactor
+        # had a spike of callbaks or there was a long sleeping time
+        # it can be more than one.
+
+        total_time = self.time() - self._load_last_update
+
+        while total_time >= _LOAD_FREQ:
+            self._load =\
+                ((1 - (min(self._load_sleeping_time,
+                           _LOAD_FREQ)/_LOAD_FREQ)) + self._load) / 2
+            total_time -= _LOAD_FREQ
+            self._load_sleeping_time =\
+                max(0, self._load_sleeping_time - _LOAD_FREQ)
+
+        # the leftovers will be used in the next _updated_load call
+        self._load_last_update = self.time() - total_time
 
     def _set_coroutine_wrapper(self, enabled):
         try:

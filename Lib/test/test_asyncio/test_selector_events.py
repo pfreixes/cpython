@@ -349,6 +349,8 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         # first call to sock_connect() registers the socket
         fut = self.loop.create_task(
             self.loop.sock_connect(sock, ('127.0.0.1', 80)))
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         self.loop._run_once()
         self.assertTrue(sock.connect.called)
         self.assertTrue(self.loop.add_writer.called)
@@ -367,6 +369,8 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
         m_gai.side_effect = (None, None, None, None, ('127.0.0.1', 0))
         m_gai._is_coroutine = False
         con = self.loop.create_task(self.loop.sock_connect(sock, addr))
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         while not m_gai.called:
             self.loop._run_once()
         m_gai.assert_called_with(
@@ -417,6 +421,8 @@ class BaseSelectorEventLoopTests(test_utils.TestCase):
 
         f = asyncio.Future(loop=self.loop)
         self.loop._sock_connect(f, sock, resolved)
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         self.loop._run_once()
         self.assertTrue(self.loop.add_writer.called)
         self.assertEqual(10, self.loop.add_writer.call_args[0][0])

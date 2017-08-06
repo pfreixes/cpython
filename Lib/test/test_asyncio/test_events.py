@@ -2645,6 +2645,8 @@ class AbstractEventLoopTests(unittest.TestCase):
             NotImplementedError, loop.get_debug)
         self.assertRaises(
             NotImplementedError, loop.set_debug, f)
+        self.assertRaises(
+            NotImplementedError, loop.load)
 
 
 class ProtocolsAbsTests(unittest.TestCase):

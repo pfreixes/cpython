@@ -382,6 +382,8 @@ class BaseEventLoopTests(test_utils.TestCase):
 
         h1.cancel()
 
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         self.loop._process_events = mock.Mock()
         self.loop._scheduled.append(h1)
         self.loop._scheduled.append(h2)
@@ -410,6 +412,8 @@ class BaseEventLoopTests(test_utils.TestCase):
         self.loop.set_debug(True)
 
         # Log to INFO level if timeout > 1.0 sec.
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         self.loop._selector.select = slow_select
         self.loop._process_events = mock.Mock()
         self.loop._run_once()
@@ -435,6 +439,8 @@ class BaseEventLoopTests(test_utils.TestCase):
         h = asyncio.TimerHandle(time.monotonic() - 1, cb, (self.loop,),
                                 self.loop)
 
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         self.loop._process_events = mock.Mock()
         self.loop._scheduled.append(h)
         self.loop._run_once()
@@ -443,6 +449,8 @@ class BaseEventLoopTests(test_utils.TestCase):
         self.assertEqual([handle], list(self.loop._ready))
 
     def test__run_once_cancelled_event_cleanup(self):
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         self.loop._process_events = mock.Mock()
 
         self.assertTrue(
@@ -517,6 +525,37 @@ class BaseEventLoopTests(test_utils.TestCase):
 
         # Ensure only uncancelled events remain scheduled
         self.assertTrue(all([not x._cancelled for x in self.loop._scheduled]))
+
+    def test__run_once_update_load(self):
+        def cb():
+            time.sleep(base_events._LOAD_FREQ)
+
+        self.loop.call_soon(cb)
+ 
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
+        self.loop._process_events = mock.Mock()
+        self.loop._update_load = mock.Mock()
+        self.loop._run_once()
+
+        self.assertTrue(self.loop._update_load.called)
+
+
+    def test__run_once_update_load_not_called(self):
+
+        def cb():
+            time.sleep(base_events._LOAD_FREQ - 0.1)
+
+        self.loop.call_soon(cb)
+
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
+        self.loop._process_events = mock.Mock()
+        self.loop._update_load = mock.Mock()
+        self.loop._run_once()
+
+        self.assertFalse(self.loop._update_load.called)
+
 
     def test_run_until_complete_type_error(self):
         self.assertRaises(TypeError,
@@ -648,6 +687,8 @@ class BaseEventLoopTests(test_utils.TestCase):
 
         self.loop.set_debug(True)
         self.loop._process_events = mock.Mock()
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
 
         self.assertIsNone(self.loop.get_exception_handler())
         mock_handler = mock.Mock()
@@ -684,6 +725,8 @@ class BaseEventLoopTests(test_utils.TestCase):
             raise AttributeError('spam')
 
         self.loop._process_events = mock.Mock()
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
 
         self.loop.set_exception_handler(handler)
 
@@ -709,6 +752,8 @@ class BaseEventLoopTests(test_utils.TestCase):
                 raise ValueError('spam')
 
         loop = Loop()
+        loop._load_sleeping_time = 0
+        loop._load_last_update = self.loop.time()
         self.addCleanup(loop.close)
         asyncio.set_event_loop(loop)
 
@@ -921,6 +966,72 @@ class BaseEventLoopTests(test_utils.TestCase):
         self.loop.stop()
         self.loop.run_forever()
         self.loop._selector.select.assert_called_once_with(0)
+
+    def test__update_load(self):
+
+        leftovers = 0.1
+        self.loop._load_last_update = 0
+        self.loop._load_sleeping_time = base_events._LOAD_FREQ
+        self.loop.time =\
+            mock.Mock(side_effect=[(base_events._LOAD_FREQ*2) + leftovers, 10])
+
+        self.loop._update_load()
+
+        self.assertEqual(self.loop.load(), 0.5)
+        self.assertEqual(self.loop._load_last_update, 10 - leftovers)
+
+    def test__update_load_sleeping_time_leftovers(self):
+
+        leftovers = 0.1
+        self.loop._load_last_update = 0
+        self.loop._load_sleeping_time = base_events._LOAD_FREQ + leftovers
+        self.loop.time = mock.Mock(side_effect=[base_events._LOAD_FREQ, 10])
+
+        self.loop._update_load()
+
+        self.assertEqual(self.loop.load(), 0.0)
+        self.assertEqual(self.loop._load_sleeping_time, 0.10000000000000009)
+
+    def test_load(self):
+
+        self.loop._load = 0.0
+        self.loop._load_last_update = 0
+        self.loop.time = mock.Mock(return_value=0)
+        self.loop._update_load = mock.Mock()
+        self.loop._process_events = mock.Mock()
+
+        @asyncio.coroutine
+        def coro():
+            self.loop.time.return_value = base_events._LOAD_FREQ - 0.2
+            self.assertEqual(self.loop.load(), 0.0)
+
+        self.loop.run_until_complete(coro())
+        self.assertFalse(self.loop._update_load.called)
+
+    def test_load_update(self):
+
+        self.loop._load = 0.0
+        self.loop._load_last_update = 0
+        self.loop.time = mock.Mock(return_value=0)
+        self.loop._update_load = mock.Mock()
+        self.loop._process_events = mock.Mock()
+
+        @asyncio.coroutine
+        def coro():
+            self.loop.time.return_value = base_events._LOAD_FREQ
+            self.assertEqual(self.loop.load(), 0.0)
+
+        self.loop.run_until_complete(coro())
+        self.assertTrue(self.loop._update_load.called)
+
+    def test_load_loop_stop_not_update(self):
+
+        self.loop._load = 0.0
+        self.loop._load_last_update = 0
+        self.loop.time = mock.Mock(return_value=base_events._LOAD_FREQ)
+        self.loop._update_load = mock.Mock()
+        self.loop.load()
+        self.assertFalse(self.loop._update_load.called)
 
 
 class MyProto(asyncio.Protocol):

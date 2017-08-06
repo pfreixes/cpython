@@ -282,6 +282,9 @@ class TestLoop(base_events.BaseEventLoop):
     """
 
     def __init__(self, gen=None):
+        # self.time() needs to be available
+        self._time = 0
+
         super().__init__()
 
         if gen is None:
@@ -293,7 +296,6 @@ class TestLoop(base_events.BaseEventLoop):
 
         self._gen = gen()
         next(self._gen)
-        self._time = 0
         self._clock_resolution = 1e-9
         self._timers = []
         self._selector = TestSelector()

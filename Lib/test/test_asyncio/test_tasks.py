@@ -1858,6 +1858,8 @@ class BaseTaskTests:
             asyncio.set_event_loop(None)
 
         # execute the task so it waits for future
+        self.loop._load_sleeping_time = 0
+        self.loop._load_last_update = self.loop.time()
         self.loop._run_once()
         self.assertEqual(len(self.loop._ready), 0)
 

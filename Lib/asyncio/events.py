@@ -508,6 +508,11 @@ class AbstractEventLoop:
     def set_debug(self, enabled):
         raise NotImplementedError
 
+    # Monitoring.
+
+    def load(self):
+        raise NotImplementedError
+
 
 class AbstractEventLoopPolicy:
     """Abstract policy for accessing the event loop."""
