@@ -53,7 +53,7 @@ _MIN_CANCELLED_TIMER_HANDLES_FRACTION = 0.5
 _FATAL_ERROR_IGNORE = (BrokenPipeError,
                        ConnectionResetError, ConnectionAbortedError)
 
-# Frequency of how often the load is updated.
+# Frequency in seconds, of how often the load is updated.
 _LOAD_FREQ = 1
 
 
@@ -1385,7 +1385,7 @@ class BaseEventLoop(events.AbstractEventLoop):
             dt = self.time() - t0
 
             if timeout is not None:
-                # Count only time spent sleeping, if SO decided to give
+                # Count only time spent sleeping, if OS decided to give
                 # the CPU later dont count it as slept time.
                 self._load_sleeping_time += min(dt, timeout)
             else:
@@ -1472,9 +1472,9 @@ class BaseEventLoop(events.AbstractEventLoop):
         total_time = self.time() - self._load_last_update
 
         while total_time >= _LOAD_FREQ:
-            self._load =\
-                ((1 - (min(self._load_sleeping_time,
-                           _LOAD_FREQ)/_LOAD_FREQ)) + self._load) / 2
+            sleeping_time = min(self._load_sleeping_time, _LOAD_FREQ)
+            load = 1 - (sleeping_time/_LOAD_FREQ)
+            self._load = (load + self._load) / 2
             total_time -= _LOAD_FREQ
             self._load_sleeping_time =\
                 max(0, self._load_sleeping_time - _LOAD_FREQ)

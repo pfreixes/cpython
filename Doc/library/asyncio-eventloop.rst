@@ -107,6 +107,12 @@ Run an event loop
 
    .. versionadded:: 3.6
 
+.. method:: AbstractEventLoop.load()
+
+   Return the load of the loop. A float number 0.0 and 1.0
+
+   .. versionadded:: 3.7
+
 
 .. _asyncio-pass-keywords:
 
