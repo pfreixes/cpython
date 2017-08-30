@@ -264,6 +264,8 @@ class BaseEventLoop(events.AbstractEventLoop):
         # Set to True when `loop.shutdown_asyncgens` is called.
         self._asyncgens_shutdown_called = False
 
+        self._statistic_cb = []
+
     def __repr__(self):
         return ('<%s running=%s closed=%s debug=%s>'
                 % (self.__class__.__name__, self.is_running(),
@@ -1383,6 +1385,11 @@ class BaseEventLoop(events.AbstractEventLoop):
                            timeout * 1e3, dt * 1e3)
         else:
             event_list = self._selector.select(timeout)
+
+        if self._statistic_cb:
+            for f in self._statistic_cb:
+                f()
+
         self._process_events(event_list)
 
         # Handle 'later' callbacks that are ready.
