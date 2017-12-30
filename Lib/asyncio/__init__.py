@@ -17,6 +17,7 @@ from .streams import *
 from .subprocess import *
 from .tasks import *
 from .transports import *
+from .loop_instruments import *
 
 __all__ = (base_events.__all__ +
            coroutines.__all__ +
@@ -29,7 +30,8 @@ __all__ = (base_events.__all__ +
            streams.__all__ +
            subprocess.__all__ +
            tasks.__all__ +
-           transports.__all__)
+           transports.__all__ +
+           loop_instruments.__all__)
 
 if sys.platform == 'win32':  # pragma: no cover
     from .windows_events import *

@@ -39,6 +39,7 @@ from . import events
 from . import futures
 from . import sslproto
 from . import tasks
+from . import loop_instruments
 from .log import logger
 
 
@@ -237,11 +238,40 @@ class BaseEventLoop(events.AbstractEventLoop):
         # Set to True when `loop.shutdown_asyncgens` is called.
         self._asyncgens_shutdown_called = False
 
+        self._instruments = []
+
     def __repr__(self):
         return (
             f'<{self.__class__.__name__} running={self.is_running()} '
             f'closed={self.is_closed()} debug={self.get_debug()}>'
         )
+
+    def add_instrument(self, instrument):
+        """Add a new instrument, the loop has to be stopped.
+
+        If the instrument has already been added will do nothing.
+        """
+        if self.is_running():
+            raise RuntimeError(
+                "Instruments can't be added when the loop is running")
+
+        if not isinstance(instrument, loop_instruments.LoopInstrument):
+            raise TypeError("instrument must be an Instrument")
+
+        if instrument not in self._instruments:
+            self._instruments.append(instrument)
+
+    def del_instrument(self, instrument):
+        """Delete a instrument that was added previously using the
+        `add_instrument` method. The loop has to be stopped.
+
+        If the instrument is not present will raise a `ValueError`.
+        """
+        if self.is_running():
+            raise RuntimeError(
+                "Instruments can't be deleted when the loop is running")
+
+        self._instruments.remove(instrument)
 
     def create_future(self):
         """Create a Future object attached to the loop."""
@@ -382,6 +412,7 @@ class BaseEventLoop(events.AbstractEventLoop):
         if events._get_running_loop() is not None:
             raise RuntimeError(
                 'Cannot run the event loop while another loop is running')
+
         self._set_coroutine_wrapper(self._debug)
         self._thread_id = threading.get_ident()
         if self._asyncgens is not None:
@@ -390,11 +421,18 @@ class BaseEventLoop(events.AbstractEventLoop):
                                    finalizer=self._asyncgen_finalizer_hook)
         try:
             events._set_running_loop(self)
+
+            for instrument in self._instruments:
+                instrument.loop_start(self)
+
             while True:
                 self._run_once()
                 if self._stopping:
                     break
         finally:
+            for instrument in self._instruments:
+                instrument.loop_stop(self)
+
             self._stopping = False
             self._thread_id = None
             events._set_running_loop(None)
@@ -1375,6 +1413,12 @@ class BaseEventLoop(events.AbstractEventLoop):
         'call_later' callbacks.
         """
 
+        instruments = self._instruments
+
+        if instruments:
+            for instrument in instruments:
+                instrument.tick_start(self)
+
         sched_count = len(self._scheduled)
         if (sched_count > _MIN_SCHEDULED_TIMER_HANDLES and
             self._timer_cancelled_count / sched_count >
@@ -1406,6 +1450,10 @@ class BaseEventLoop(events.AbstractEventLoop):
             when = self._scheduled[0]._when
             timeout = max(0, when - self.time())
 
+        if instruments:
+            for instrument in instruments:
+                instrument.io_start(self, timeout)
+
         if self._debug and timeout != 0:
             t0 = self.time()
             event_list = self._selector.select(timeout)
@@ -1428,6 +1476,11 @@ class BaseEventLoop(events.AbstractEventLoop):
                            timeout * 1e3, dt * 1e3)
         else:
             event_list = self._selector.select(timeout)
+
+        if instruments:
+            for instrument in instruments:
+                instrument.io_end(self, timeout)
+
         self._process_events(event_list)
 
         # Handle 'later' callbacks that are ready.
@@ -1447,10 +1500,12 @@ class BaseEventLoop(events.AbstractEventLoop):
         # they will be run the next time (after another I/O poll).
         # Use an idiom that is thread-safe without using locks.
         ntodo = len(self._ready)
+
         for i in range(ntodo):
             handle = self._ready.popleft()
             if handle._cancelled:
                 continue
+
             if self._debug:
                 try:
                     self._current_handle = handle
@@ -1464,7 +1519,12 @@ class BaseEventLoop(events.AbstractEventLoop):
                     self._current_handle = None
             else:
                 handle._run()
+
         handle = None  # Needed to break cycles when an exception occurs.
+
+        if instruments:
+            for instrument in instruments:
+                instrument.tick_end(self, ntodo)
 
     def _set_coroutine_wrapper(self, enabled):
         try:

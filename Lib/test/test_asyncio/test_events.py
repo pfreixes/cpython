@@ -2526,6 +2526,10 @@ class AbstractEventLoopTests(unittest.TestCase):
             NotImplementedError, loop.get_debug)
         self.assertRaises(
             NotImplementedError, loop.set_debug, f)
+        self.assertRaises(
+            NotImplementedError, loop.add_instrument)
+        self.assertRaises(
+            NotImplementedError, loop.del_instrument)
 
     def test_not_implemented_async(self):
 

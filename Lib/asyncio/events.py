@@ -502,6 +502,14 @@ class AbstractEventLoop:
     def set_debug(self, enabled):
         raise NotImplementedError
 
+    # Instrumentalization
+
+    def add_instrument(self):
+        raise NotImplementedError
+
+    def del_instrument(self):
+        raise NotImplementedError
+
 
 class AbstractEventLoopPolicy:
     """Abstract policy for accessing the event loop."""

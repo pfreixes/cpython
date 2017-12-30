@@ -892,6 +892,39 @@ Debug mode
 
    The :ref:`debug mode of asyncio <asyncio-debug-mode>`.
 
+Loop instrumentalization
+------------------------
+
+.. method:: AbstractEventLoop.add_instrumnet(instrument)
+
+   Add  *instrument* to instrumentalize the loop behaviour.
+
+   The *instrument* is a class instance that derives from
+   :class:``asyncio.LoopInstrumnet``, this instance can implement the
+   following methods, which each one will receive a specific event loop:
+
+   * :meth:`loop_start`: Called when the loop starts. Receives the `loop`
+     instance as a parameter.
+   * :meth:`tick_start`: Called when a new loop tick starts. Receives the
+     `loop` instance as a parameter.
+   * :meth:`io_start`: Called when a starts a new IO process. Receives the
+     `loop` instance and the `timeout` desired as a parameters.
+   * :meth:`io_end`: Called when a ends the IO process. Receives the
+     `loop` instance and the `timeout` desired as a parameters.
+   * :meth:`tick_end`: Called when the loop tick ends. Receives the
+     `loop` instance and the number of `handles` processed as a parameters.
+   * :meth:`loop_stop`: Called when the loop stops. Receives the `loop`
+     instance as a parameter.
+
+   .. versionadded:: 3.7.0
+
+.. method:: AbstractEventLoop.del_instrumnet(instrument)
+
+   Remove an  *instrument* that was added previously using the
+   :meth:`AbstractEventLoop.add_instrument` method.
+
+   .. versionadded:: 3.7.0
+
 Server
 ------
 

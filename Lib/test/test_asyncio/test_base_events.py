@@ -906,6 +906,94 @@ class BaseEventLoopTests(test_utils.TestCase):
         self.loop.run_forever()
         self.loop._selector.select.assert_called_once_with(0)
 
+    def test_add_del_instrument(self):
+
+        class instrument(asyncio.LoopInstrument):
+            pass
+
+        i = instrument()
+
+        self.loop.stop()
+        self.loop.add_instrument(i)
+        self.assertEqual(self.loop._instruments, [i])
+
+        # add the instrument twice do nothing
+        self.loop.add_instrument(i)
+        self.assertEqual(self.loop._instruments, [i])
+
+        # remove the instrument
+        self.loop.del_instrument(i)
+        self.assertEqual(self.loop._instruments, [])
+
+        # remove the instrument twice raises an error
+        self.assertRaises(ValueError, self.loop.del_instrument, i)
+
+    def test_add_del_instrument_loop_started(self):
+        add_raised, del_raised = False, False
+
+        @asyncio.coroutine
+        def coro():
+            nonlocal add_raised, del_raised
+            try:
+                self.loop.add_instrument(mock.Mock())
+            except RuntimeError:
+                add_raised = True
+
+            try:
+                self.loop.del_instrument(mock.Mock())
+            except RuntimeError:
+                del_raised = True
+
+        self.loop._process_events = mock.Mock()
+        self.loop.run_until_complete(coro())
+
+        self.assertTrue(del_raised)
+        self.assertTrue(add_raised)
+
+    def test_add_instrument_wrong_type(self):
+        self.loop.stop()
+        self.assertRaises(TypeError, self.loop.add_instrument, mock.Mock())
+
+    def test_instrument(self):
+
+        class instrument(asyncio.LoopInstrument):
+            loop_start = mock.Mock()
+            tick_start = mock.Mock()
+            io_start = mock.Mock()
+            io_end = mock.Mock()
+            tick_end = mock.Mock()
+            loop_stop = mock.Mock()
+
+        @asyncio.coroutine
+        def coro():
+            pass
+
+        i = instrument()
+        self.loop._process_events = mock.Mock()
+        self.loop.add_instrument(i)
+        self.loop.run_until_complete(coro())
+
+        i.loop_start.assert_called_once_with(self.loop)
+        i.loop_stop.assert_called_once_with(self.loop)
+
+        # one call for schedule the task, other to call the coro
+        i.tick_start.assert_has_calls([
+            mock.call(self.loop),
+            mock.call(self.loop)
+        ])
+        i.io_start.assert_has_calls([
+            mock.call(self.loop, 0),
+            mock.call(self.loop, 0)
+        ])
+        i.io_end.assert_has_calls([
+            mock.call(self.loop, 0),
+            mock.call(self.loop, 0)
+        ])
+        i.tick_end.assert_has_calls([
+            mock.call(self.loop, 1),
+            mock.call(self.loop, 1)
+        ])
+
 
 class MyProto(asyncio.Protocol):
     done = None
